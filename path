@@ -1,0 +1,103 @@
+```
+
+//SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.0;
+
+contract CrowdFunding
+{
+    mapping(address=>uint) public contributers;
+      address public manager;
+      uint public no_of_contributers;
+      uint public min_contribution ;
+      uint public target;
+      uint public gained_amount;
+      uint public deadline;
+
+      struct Requests
+      {
+          string description;
+          address payable recipient;
+          uint value;
+          bool completed;
+          uint no_of_voters;
+          mapping(address=>bool) voters;
+      }
+
+      mapping(uint=>Requests) public requests;
+     uint public numRequests;
+
+     constructor(uint _target, uint _deadline)
+     {
+        target = _target ;
+        deadline = block.timestamp + _deadline ;
+        manager = msg.sender;
+        min_contribution = 100 wei;
+     }
+      
+     function sendETH() external payable 
+     {
+         require( block.timestamp < deadline, " Deadline has passed ");
+         require( msg.value >= min_contribution , " Not crossed Minimum contribution " );
+         if(contributers[msg.sender] == 0)
+         {
+            no_of_contributers++;  // counting no of contributers; agar koi ek se adhik baar deta h to ek hi baaar count hoga
+         }                          //bcz agar ek hi banda kai baar gin liya gya to agar usne 51 % donate kiya to vo ab 
+                                      // kuch bhi kr sakta h
+         contributers[msg.sender] += msg.value;   // refund dene ke liye isko store kiya ja rha h
+         gained_amount += msg.value;        
+     }  
+
+    function getBalance() public view returns(uint)
+     {
+         return address(this).balance;
+     } 
+        
+    function refund() public
+    {
+        require(block.timestamp > deadline && gained_amount < target , "you are not eligible for your refund ");
+        require(contributers[msg.sender] > 0 ," you can't refund bcz you didn't contributed yet" );
+        address payable user = payable(msg.sender);  // jo refund k eliye abola h uske liye, payable bna rhe h msg.sender ko taki paise transfer ho sake
+        user.transfer(contributers[msg.sender]);   // yahan hamne bhej diya ; contributers[msg.sender]-> accessing his donate amount
+        contributers[msg.sender] = 0;
+
+    }
+
+    modifier onlyManager()
+    {
+        require(msg.sender == manager , " Only manager can call this fxn ");
+        _;
+    }    
+    
+    function createRequests(string memory _description, address payable _recipient,uint _value) public onlyManager
+    {
+        Requests storage newRequests = requests[numRequests];
+        numRequests++;
+        newRequests.description = _description;
+        newRequests.recipient = _recipient;
+        newRequests.value = _value;
+        newRequests.completed = false;
+        newRequests.no_of_voters = 0;
+
+    }
+
+    function voteRequest(uint _requestNo) public
+    {
+        require(contributers[msg.sender] > 0, " you must be contributor ");
+        Requests storage thisRequests = requests[_requestNo];
+        require(thisRequests.voters[msg.sender]==false , " You have already voted");
+        thisRequests.voters[msg.sender] = true;
+        thisRequests.no_of_voters++ ;
+    }
+
+    function makePayment(uint _requestNo) public onlyManager
+    {
+        require(gained_amount>=target);
+        Requests storage thisRequests = requests[_requestNo];
+        require(thisRequests.completed == false , "the request has been completed");
+        require(thisRequests.no_of_voters > no_of_contributers/2,"majority does not support"); 
+        thisRequests.recipient.transfer(thisRequests.value);
+        thisRequests.completed = true;
+    }
+
+}
